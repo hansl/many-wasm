@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "src/storage/ledger",
+    "src/modules/_2_ledger",
+    "src/many-wasm",
+    "src/many-wasm-server",
+]

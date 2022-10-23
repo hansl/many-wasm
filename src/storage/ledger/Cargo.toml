@@ -1,0 +1,15 @@
+[package]
+name = "storage-ledger"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+many-error = { git = "https://github.com/hansl/many-rs.git", branch = "make-it-no-std-ish" }
+many-identity = { git = "https://github.com/hansl/many-rs.git", branch = "make-it-no-std-ish" }
+many-modules = { git = "https://github.com/hansl/many-rs.git", branch = "make-it-no-std-ish" }
+many-wasm = { path = "../../many-wasm" }
+minicbor = "0.18.0"
+wee_alloc = "0.4.5"

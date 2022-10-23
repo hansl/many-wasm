@@ -1,0 +1,11 @@
+[package]
+name = "many-wasm"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+many-error = { git = "https://github.com/hansl/many-rs.git", branch = "make-it-no-std-ish" }
+many-identity = { git = "https://github.com/hansl/many-rs.git", branch = "make-it-no-std-ish" }
+minicbor = "0.18.0"
