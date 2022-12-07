@@ -7,7 +7,10 @@ use std::collections::BTreeMap;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-#[export_name = "ledger.balance"]
+#[export_name = "init"]
+pub fn init() {}
+
+#[export_name = "endpoint ledger.balance"]
 pub fn balance() {
     let sender = many_wasm::many::sender();
     many_wasm::many::log(&format!(r#"Sender: "{}""#, sender));

@@ -55,7 +55,6 @@ impl<T> Try for ErrorResult<T> {
 
 pub mod many {
     use super::host::many;
-    use crate::host::many::{return_data, return_error};
     use crate::{error_argument, error_create, error_message};
     use many_error::ManyError;
     use many_identity::Address;
@@ -107,11 +106,11 @@ pub mod many {
                 );
             }
 
-            return_error(handle);
+            many::return_error(handle);
         }
     }
 
     pub fn set_return_data(data: Vec<u8>) {
-        unsafe { return_data(data.as_ptr() as u32, data.len() as u32) }
+        unsafe { many::return_data(data.as_ptr() as u32, data.len() as u32) }
     }
 }

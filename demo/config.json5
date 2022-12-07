@@ -1,0 +1,17 @@
+{
+  modules: {
+    "../target/wasm32-wasi/debug/_2_ledger.wasm": {},
+  },
+  storages: [
+    {
+      name: "ledger",
+      "type": "Merk",
+      "path": "ledger.db"
+    },
+    {
+      name: "kvstore",
+      "type": "Merk",
+      "path": "kvstore.db"
+    },
+  ],
+}

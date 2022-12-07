@@ -1,56 +1,7 @@
+use crate::abi::{_read, _read_str, _store};
 use crate::wasm_engine::state::WasmState;
 use std::cmp::min;
-use wasmtime::{Caller, Extern, Trap};
-
-fn _read<R>(
-    caller: &mut Caller<'_, WasmState>,
-    ptr: u32,
-    len: u32,
-    func: impl FnOnce(&[u8]) -> Result<R, Trap>,
-) -> Result<R, Trap> {
-    let memory = match caller.get_export("memory") {
-        Some(Extern::Memory(mem)) => mem,
-        _ => return Err(Trap::new("failed to find host memory")),
-    };
-    let data = memory
-        .data(&caller)
-        .get(ptr as usize..)
-        .and_then(|arr| arr.get(..len as usize))
-        .ok_or_else(|| Trap::new("pointer/length out of bounds"))?;
-
-    func(data)
-}
-
-fn _read_str<R>(
-    caller: &mut Caller<'_, WasmState>,
-    ptr: u32,
-    len: u32,
-    func: impl FnOnce(&str) -> Result<R, Trap>,
-) -> Result<R, Trap> {
-    _read(caller, ptr, len, |data| {
-        let s = std::str::from_utf8(data).map_err(|_| Trap::new("invalid utf-8 string"))?;
-        func(s)
-    })
-}
-
-fn _store<T>(
-    mut caller: Caller<WasmState>,
-    ptr: u32,
-    len: u32,
-    func: impl FnOnce(&mut [u8]) -> Result<T, Trap>,
-) -> Result<T, Trap> {
-    let memory = match caller.get_export("memory") {
-        Some(Extern::Memory(mem)) => mem,
-        _ => return Err(Trap::new("failed to find host memory")),
-    };
-
-    let data = memory
-        .data_mut(&mut caller)
-        .get_mut(ptr as usize..)
-        .and_then(|arr| arr.get_mut(..len as usize))
-        .ok_or_else(|| Trap::new("pointer/length out of bounds"))?;
-    func(data)
-}
+use wasmtime::{Caller, Trap};
 
 pub fn log_str(mut caller: Caller<'_, WasmState>, ptr: u32, len: u32) -> Result<(), Trap> {
     _read(&mut caller, ptr, len, |mem| {
@@ -103,7 +54,7 @@ pub fn error_message(
     msg_len: u32,
 ) -> Result<(), Trap> {
     let message = _read_str(&mut caller, msg_ptr, msg_len, |s| Ok(s.to_string()))?;
-    let err = caller.data_mut().get_error_mut(handle)?;
+    let err = caller.data_mut().get_error_mut(handle.into())?;
     err.set_message(Some(message.to_string()));
     Ok(())
 }
@@ -117,13 +68,13 @@ pub fn error_argument(
 ) -> Result<(), Trap> {
     let key = _read_str(&mut caller, key_ptr, key_len, |s| Ok(s.to_string()))?;
     let value = _read_str(&mut caller, value_ptr, value_len, |s| Ok(s.to_string()))?;
-    let err = caller.data_mut().get_error_mut(handle)?;
+    let err = caller.data_mut().get_error_mut(handle.into())?;
     err.add_argument(key, value);
     Ok(())
 }
 
 pub fn return_error(mut caller: Caller<'_, WasmState>, handle: u32) -> Result<(), Trap> {
-    let err = caller.data().get_error(handle)?.clone();
+    let err = caller.data().get_error(handle.into())?.clone();
     caller.data_mut().set_return_value(Err(err))?;
     Ok(())
 }

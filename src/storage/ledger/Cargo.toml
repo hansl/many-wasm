@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 many-error = { git = "https://github.com/hansl/many-rs.git", branch = "make-it-no-std-ish" }
 many-identity = { git = "https://github.com/hansl/many-rs.git", branch = "make-it-no-std-ish" }
 many-modules = { git = "https://github.com/hansl/many-rs.git", branch = "make-it-no-std-ish" }
+many-types = { git = "https://github.com/hansl/many-rs.git", branch = "make-it-no-std-ish" }
 many-wasm = { path = "../../many-wasm" }
 minicbor = "0.18.0"
 wee_alloc = "0.4.5"

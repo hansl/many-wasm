@@ -1,31 +1,88 @@
 use crate::abi;
+use crate::config::ModuleConfig;
+use crate::storage::StorageLibrary;
 use anyhow::anyhow;
 use many_error::ManyError;
 use many_protocol::RequestMessage;
+use state::WasmState;
+use std::collections::BTreeMap;
 use std::path::Path;
-use wasmtime::{Linker, Module, Store};
+use tracing::debug;
+use wasmtime::{Engine, Linker, Module, Store};
 
 pub mod state;
 
-use state::WasmState;
+#[derive(Default)]
+struct ModuleLibrary {
+    endpoints: BTreeMap<String, usize>,
+    modules: Vec<Module>,
+}
+
+impl ModuleLibrary {
+    pub fn add(&mut self, module: Module) -> Result<(), anyhow::Error> {
+        let endpoints = module
+            .exports()
+            .into_iter()
+            .filter(|e| e.ty().func().is_some() && e.name().starts_with("endpoint "))
+            .map(|e| e.name()[9..].to_string())
+            .collect::<Vec<String>>();
+
+        debug!("Adding module: endpoints = {endpoints:?}");
+
+        for ep in endpoints.iter() {
+            if self.endpoints.contains_key(ep) {
+                return Err(anyhow!("Endpoint {ep} already registered."));
+            }
+        }
+
+        let idx = self.modules.len();
+        self.modules.push(module);
+        for ep in endpoints {
+            self.endpoints.insert(ep, idx);
+        }
+
+        Ok(())
+    }
+
+    pub fn get(&self, endpoint: &str) -> Option<&Module> {
+        let idx = self.endpoints.get(endpoint)?;
+        self.modules.get(*idx)
+    }
+}
 
 pub struct WasmEngine {
     store: Store<WasmState>,
-    module: Module,
+    modules: ModuleLibrary,
     linker: Linker<WasmState>,
 }
 
 impl WasmEngine {
-    pub fn new<T: AsRef<Path>>(module: T) -> Result<Self, anyhow::Error> {
-        let store = Store::default();
-        let module: Module =
-            Module::from_file(store.engine(), module).map_err(|e| anyhow!("{}", e))?;
+    pub fn new(
+        config: ModuleConfig,
+        config_root: impl AsRef<Path>,
+        storage: StorageLibrary,
+    ) -> Result<Self, anyhow::Error> {
+        let engine = Engine::default();
+        let store = Store::new(&engine, WasmState::new(storage));
+
+        let mut modules = ModuleLibrary::default();
+        for (p, _c) in config {
+            let wasm_path = config_root.as_ref().join(p);
+            debug!(
+                msg = "loading wasm",
+                wasm_path = wasm_path.to_string_lossy().as_ref()
+            );
+            let module: Module =
+                Module::from_file(store.engine(), wasm_path).map_err(|e| anyhow!("{}", e))?;
+            modules.add(module)?;
+        }
+
         let mut linker = Linker::new(store.engine());
         abi::link(&mut linker)?;
 
         Ok(Self {
             store,
-            module,
+            modules,
             linker,
         })
     }
@@ -36,11 +93,16 @@ impl WasmEngine {
 
         let instance = self
             .linker
-            .instantiate(&mut self.store, &self.module)
+            .instantiate(
+                &mut self.store,
+                self.modules
+                    .get(&endpoint)
+                    .ok_or_else(|| ManyError::unknown("Endpoint not found"))?,
+            )
             .expect("Could not instantiate.");
 
         let func = instance
-            .get_typed_func::<(), (), _>(&mut self.store, &endpoint)
+            .get_typed_func::<(), (), _>(&mut self.store, &format!("endpoint {}", endpoint))
             .map_err(|e| ManyError::unknown(e))?;
 
         func.call(&mut self.store, ())
