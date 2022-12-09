@@ -13,12 +13,11 @@ pub fn init() {}
 #[export_name = "endpoint ledger.balance"]
 pub fn balance() {
     let sender = many_wasm::many::sender();
-    many_wasm::many::log(&format!(r#"Sender: "{}""#, sender));
+    println!(r#"Sender: "{}""#, sender);
 
     // Try to decode bytes.
     let args = many_wasm::many::decode::<many_modules::ledger::BalanceArgs>(&payload())?;
-    let message = format!("balance: {:?}", args);
-    many_wasm::many::log(&message);
+    eprintln!("balance: {:?}", args);
 
     many_wasm::many::set_return_data(
         minicbor::to_vec(many_modules::ledger::BalanceReturns {

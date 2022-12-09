@@ -1,10 +1,11 @@
 use crate::abi;
 use crate::config::ModuleConfig;
 use crate::storage::StorageLibrary;
+use abi::wasi_snapshot_preview1::create_wasi_ctx;
 use anyhow::anyhow;
 use many_error::ManyError;
 use many_protocol::RequestMessage;
-use state::WasmState;
+use state::WasmContext;
 use std::collections::BTreeMap;
 use std::path::Path;
 use tracing::debug;
@@ -51,9 +52,9 @@ impl ModuleLibrary {
 }
 
 pub struct WasmEngine {
-    store: Store<WasmState>,
+    store: Store<WasmContext>,
     modules: ModuleLibrary,
-    linker: Linker<WasmState>,
+    linker: Linker<WasmContext>,
 }
 
 impl WasmEngine {
@@ -63,7 +64,9 @@ impl WasmEngine {
         storage: StorageLibrary,
     ) -> Result<Self, anyhow::Error> {
         let engine = Engine::default();
-        let store = Store::new(&engine, WasmState::new(storage));
+        let mut store = Store::new(&engine, WasmContext::new(storage, create_wasi_ctx()));
+        let mut linker = Linker::new(store.engine());
+        abi::link(&mut linker)?;
 
         let mut modules = ModuleLibrary::default();
         for (p, _c) in config {
@@ -74,11 +77,14 @@ impl WasmEngine {
             );
             let module: Module =
                 Module::from_file(store.engine(), wasm_path).map_err(|e| anyhow!("{}", e))?;
+
+            // Instantiate at least once.
+            linker
+                .instantiate(&mut store, &module)
+                .expect("Could not instantiate.");
+
             modules.add(module)?;
         }
-
-        let mut linker = Linker::new(store.engine());
-        abi::link(&mut linker)?;
 
         Ok(Self {
             store,

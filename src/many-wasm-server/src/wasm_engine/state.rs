@@ -1,10 +1,12 @@
 use crate::storage::{StorageLibrary, StorageRef};
+use anyhow::Error;
 use many_error::ManyError;
 use many_identity::Address;
 use many_protocol::RequestMessage;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU32, Ordering};
-use wasmtime::Trap;
+use std::time::SystemTime;
+use wasi_common::WasiCtx;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 #[repr(transparent)]
@@ -128,68 +130,80 @@ impl HandleRegistry {
     }
 }
 
-pub struct WasmState {
-    request: Result<RequestMessage, Trap>,
+pub struct WasmContext {
+    request: Result<RequestMessage, Error>,
     registry: HandleRegistry,
     return_value: Option<Result<Vec<u8>, ManyError>>,
     storage_library: StorageLibrary,
+    wasi_ctx: WasiCtx,
 }
 
-impl WasmState {
-    pub fn new(storage_library: StorageLibrary) -> Self {
+impl WasmContext {
+    pub fn new(storage_library: StorageLibrary, wasi_ctx: WasiCtx) -> Self {
         Self {
-            request: Err(Trap::new("No request available in context")),
+            request: Err(Error::msg("No request available in context")),
             registry: Default::default(),
             return_value: None,
             storage_library,
+            wasi_ctx,
         }
     }
 
-    pub fn reset(&mut self) -> Result<Result<Vec<u8>, ManyError>, Trap> {
-        self.request = Err(Trap::new("missing context"));
+    pub fn reset(&mut self) -> Result<Result<Vec<u8>, ManyError>, Error> {
+        self.request = Err(Error::msg("missing context"));
         self.return_value
             .take()
-            .ok_or_else(|| Trap::new("No return value was set"))
+            .ok_or_else(|| Error::msg("No return value was set"))
+    }
+
+    pub fn wasi_ctx(&self) -> &WasiCtx {
+        &self.wasi_ctx
+    }
+
+    pub fn wasi_ctx_mut(&mut self) -> &mut WasiCtx {
+        &mut self.wasi_ctx
     }
 
     pub fn set_request(&mut self, request: RequestMessage) {
         self.request = Ok(request);
     }
 
-    pub fn set_return_value(&mut self, value: Result<Vec<u8>, ManyError>) -> Result<(), Trap> {
+    pub fn set_return_value(&mut self, value: Result<Vec<u8>, ManyError>) -> Result<(), Error> {
         match self.return_value.replace(value) {
             None => Ok(()),
-            Some(_) => Err(Trap::new("return state already set")),
+            Some(_) => Err(Error::msg("return state already set")),
         }
     }
 
-    pub fn request(&self) -> Result<&RequestMessage, Trap> {
-        self.request.as_ref().map_err(Clone::clone)
+    pub fn request(&self) -> Result<&RequestMessage, Error> {
+        self.request
+            .as_ref()
+            .map_err(|err| Error::msg(format!("Request Error: {err}")))
     }
 
-    pub fn payload_size(&self) -> Result<usize, Trap> {
+    pub fn payload_size(&self) -> Result<usize, Error> {
         Ok(self.request()?.data.len())
     }
-    pub fn payload_bytes(&self) -> Result<&[u8], Trap> {
+    pub fn payload_bytes(&self) -> Result<&[u8], Error> {
         Ok(self.request()?.data.as_slice())
     }
 
-    pub fn sender(&self) -> Result<Address, Trap> {
+    pub fn sender(&self) -> Result<Address, Error> {
         Ok(self.request()?.from.unwrap_or_default())
     }
-    pub fn dest(&self) -> Result<Address, Trap> {
+    pub fn dest(&self) -> Result<Address, Error> {
         Ok(self.request()?.to)
     }
 
-    pub fn get_error(&self, handle: RegistryHandle) -> Result<&ManyError, Trap> {
+    pub fn get_error(&self, handle: RegistryHandle) -> Result<&ManyError, Error> {
         self.registry
             .get_error(handle)
-            .ok_or_else(|| Trap::new("invalid handle"))
+            .ok_or_else(|| Error::msg("invalid handle"))
     }
-    pub fn get_error_mut(&mut self, handle: RegistryHandle) -> Result<&mut ManyError, Trap> {
+    pub fn get_error_mut(&mut self, handle: RegistryHandle) -> Result<&mut ManyError, Error> {
         self.registry
             .get_error_mut(handle)
-            .ok_or_else(|| Trap::new("invalid handle"))
+            .ok_or_else(|| Error::msg("invalid handle"))
     }
     pub fn create_error(&mut self, code: i32) -> RegistryHandle {
         self.registry.error(code)
@@ -200,5 +214,9 @@ impl WasmState {
             self.registry
                 .create_storage(self.storage_library.get(name)?.clone()),
         )
+    }
+
+    pub fn get_time(&self) -> SystemTime {
+        SystemTime::now()
     }
 }
