@@ -42,6 +42,10 @@ impl KvStore for MemoryStorage {
         self.inner.contains_key(key)
     }
 
+    fn size(&self, key: &[u8]) -> Option<usize> {
+        Some(self.inner.get(key)?.len())
+    }
+
     fn hash(&self) -> Vec<u8> {
         if let Some(ref hash) = *self.hash.borrow() {
             return hash.to_vec();

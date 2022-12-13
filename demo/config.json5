@@ -1,17 +1,79 @@
+// THIS IS A TEST CONFIGURATION AND SHOULD NOT BE USED IN A PRODUCTION
+// ENVIRONMENT.
+// Notably, all addresses here are derived from a PEM that is public and
+// insecure.
 {
+  // The `init` field list modules to use to create the initial storage.
+  // Those modules don't know about the root storages, they will use the
+  // same storage as any other modules.
+  // The `init()` function in each of those modules will be used. Then
+  // the modules themselves will be discarded and never used again.
+  // They are executed in order.
+  init : [
+    // This creates tokens at genesis.
+    {
+      name: "tokens_init",
+      path: "../target/wasm32-wasi/debug/tokens_init.wasm",
+      arg: {
+        "mqbfbahksdwaqeenayy2gxke32hgb7aq4ao4wt745lsfs6wiaaaaqnz": {
+          name: "TEST Token",
+          symbol: "TEST",
+          precision: 9
+        }
+      }
+    }
+    // This sets up balances inside the storage.
+    {
+      // `name` is optional but will show up in the logs. If unspecified,
+      // the file basename will be used.
+      name: "balances_init",
+      path: "../target/wasm32-wasi/debug/balances_init.wasm",
+      // They receive this JSON value in argument. That json can be an object
+      // (in which case it will be passed as JSON) or a path to a file (which
+      // will be loaded and passed as JSON to the module).
+      arg: {
+        // Symbols supported at genesis.
+        symbols: {
+          "mqbfbahksdwaqeenayy2gxke32hgb7aq4ao4wt745lsfs6wiaaaaqnz": "MFX"
+        },
+        balances: {
+          "maffbahksdwaqeenayy2gxke32hgb7aq4ao4wt745lsfs6wijp": {
+            "MFX": "100_000_000__000_000_000",
+          }
+        }
+      }
+    },
+    // This module checks the hash (at this time) of the storage.
+    {
+      path: "../target/wasm32-wasi/debug/check_hash.wasm",
+      arg: "fc0041ca4f7d959fe9e5a337e175bd8a68942cad76745711a3daf820a159f7eb"
+    },
+  ],
   modules: {
     "../target/wasm32-wasi/debug/_2_ledger.wasm": {},
   },
   storages: [
     {
       name: "ledger",
-      "type": "Merk",
-      "path": "ledger.db"
+      type: "Merk",
+      path: "ledger.db"
+    },
+    {
+      name: "balances",
+      type: "Prefixed",
+      prefix: "/balances/",
+      backend: "ledger"
+    },
+    {
+      name: "tokens",
+      type: "Prefixed",
+      prefix: "/tokens/",
+      backend: "ledger"
     },
     {
       name: "kvstore",
-      "type": "Merk",
-      "path": "kvstore.db"
+      type: "Merk",
+      path: "kvstore.db"
     },
   ],
 }

@@ -22,7 +22,7 @@ struct Opts {
 
     /// Whether to create databases.
     #[clap(long, default_value = "false")]
-    create: bool,
+    init: bool,
 
     /// Path to the PEM file for the identity.
     #[clap(long)]
@@ -65,7 +65,7 @@ async fn main() {
 
     let config_dir = opts.config.parent().unwrap_or_else(|| Path::new(""));
     let config_dir = std::env::current_dir().unwrap().join(config_dir);
-    let storage = StorageLibrary::create(config.storages, &config_dir, opts.create)
+    let storage = StorageLibrary::create(config.storages, &config_dir, opts.init)
         .expect("Could not create storage.");
 
     let key = many_identity_dsa::CoseKeyIdentity::from_pem(
@@ -73,7 +73,7 @@ async fn main() {
     )
     .expect("Could not parse PEM file.");
 
-    let engine = wasm_engine::WasmEngine::new(config.modules, &config_dir, storage)
+    let engine = wasm_engine::WasmEngine::new(config.modules, &config_dir, storage, opts.init)
         .expect("Could not load WASM.");
     let executor = executor::WasmExecutor::new(engine, key);
     let server = HttpServer::new(executor);

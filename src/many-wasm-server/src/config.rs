@@ -70,10 +70,7 @@ impl SingleStorageConfig {
                     .get_mut(backend)
                     .ok_or_else(|| ManyError::unknown("Unknown backend storage."))?;
 
-                Ok((
-                    name,
-                    backend.cloned_prefixed(hex::decode(prefix).map_err(ManyError::unknown)?),
-                ))
+                Ok((name, backend.cloned_prefixed(prefix.into_bytes())))
             }
             SingleStorageConfig::Null { name } => Ok((name, StorageRef::new(NullKvStore))),
         }

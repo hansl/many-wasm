@@ -121,7 +121,7 @@ impl HandleRegistry {
         self.create(RegistryObject::Storage(storage_ref))
     }
 
-    pub fn get_storage(&mut self, handle: RegistryHandle) -> Option<&StorageRef> {
+    pub fn get_storage(&self, handle: RegistryHandle) -> Option<&StorageRef> {
         self.inner.get(&handle)?.as_storage()
     }
 
@@ -135,6 +135,7 @@ pub struct WasmContext {
     registry: HandleRegistry,
     return_value: Option<Result<Vec<u8>, ManyError>>,
     storage_library: StorageLibrary,
+    storage_cache: BTreeMap<String, RegistryHandle>,
     wasi_ctx: WasiCtx,
 }
 
@@ -145,6 +146,7 @@ impl WasmContext {
             registry: Default::default(),
             return_value: None,
             storage_library,
+            storage_cache: BTreeMap::new(),
             wasi_ctx,
         }
     }
@@ -209,11 +211,28 @@ impl WasmContext {
         self.registry.error(code)
     }
 
-    pub fn create_storage(&mut self, name: &str) -> Option<RegistryHandle> {
-        Some(
-            self.registry
-                .create_storage(self.storage_library.get(name)?.clone()),
-        )
+    pub fn create_storage(&mut self, name: &str) -> Result<RegistryHandle, Error> {
+        // Make sure it hasn't already been created.
+        Ok(*self.storage_cache.entry(name.to_string()).or_insert(
+            self.registry.create_storage(
+                self.storage_library
+                    .get(name)
+                    .ok_or_else(|| Error::msg("Unknown storage name."))?
+                    .clone(),
+            ),
+        ))
+    }
+
+    pub fn get_storage(&self, handle: u32) -> Result<&StorageRef, Error> {
+        self.registry
+            .get_storage(handle.into())
+            .ok_or_else(|| Error::msg("Unknown handle or not a storage."))
+    }
+
+    pub fn get_storage_mut(&mut self, handle: u32) -> Result<&mut StorageRef, Error> {
+        self.registry
+            .get_storage_mut(handle.into())
+            .ok_or_else(|| Error::msg("Unknown handle or not a storage."))
     }
 
     pub fn get_time(&self) -> SystemTime {

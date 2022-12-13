@@ -4,28 +4,15 @@ use std::cmp::min;
 use wasi_common::Error;
 use wasmtime::Caller;
 
-pub fn log_str(mut caller: Caller<'_, WasmContext>, ptr: u32, len: u32) -> Result<(), Error> {
-    _read(&mut caller, ptr, len, |mem| {
-        let str = std::str::from_utf8(mem).map_err(|_| Error::msg("invalid utf-8"))?;
-        tracing::warn!("LOG \"{}\"", str);
-        Ok(())
-    })
-}
-
-pub fn log_u32(v: u32) -> Result<(), Error> {
-    tracing::warn!("LOG {}", v);
-    Ok(())
-}
-
 pub fn payload_size(caller: Caller<'_, WasmContext>) -> u32 {
     caller.data().payload_size().unwrap_or(0) as u32
 }
 
-pub fn payload_copy(caller: Caller<'_, WasmContext>, ptr: u32, len: u32) -> Result<u32, Error> {
+pub fn payload_copy(mut caller: Caller<'_, WasmContext>, ptr: u32, len: u32) -> Result<u32, Error> {
     // TODO: remove clone here.
     let payload_bytes = caller.data().payload_bytes()?.to_vec();
 
-    _store(caller, ptr, len, |data| {
+    _store(&mut caller, ptr, len, |data| {
         data.copy_from_slice(&payload_bytes[..len as usize]);
         Ok(min(data.len(), payload_bytes.len()) as u32)
     })
@@ -35,11 +22,11 @@ pub fn sender_size(caller: Caller<'_, WasmContext>) -> Result<u32, Error> {
     Ok(caller.data().sender()?.to_vec().len() as u32)
 }
 
-pub fn sender_copy(caller: Caller<'_, WasmContext>, ptr: u32) -> Result<u32, Error> {
+pub fn sender_copy(mut caller: Caller<'_, WasmContext>, ptr: u32) -> Result<u32, Error> {
     let sender = caller.data().sender()?;
     let bytes = sender.to_vec();
 
-    _store(caller, ptr, bytes.len() as u32, |data| {
+    _store(&mut caller, ptr, bytes.len() as u32, |data| {
         data.copy_from_slice(&bytes);
         Ok(bytes.len() as u32)
     })

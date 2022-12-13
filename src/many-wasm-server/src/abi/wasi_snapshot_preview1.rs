@@ -16,7 +16,7 @@ impl TracingWasiFile {
     pub fn new(level: Level) -> Self {
         Self {
             level,
-            buffer: String::new(),
+            buffer: String::with_capacity(1024),
         }
     }
 }
@@ -44,7 +44,7 @@ impl WasiFile for TracingWasiFile {
                     Level::WARN => tracing::warn!("{}{}", self.buffer, &v[..v.len() - 1]),
                     Level::ERROR => tracing::error!("{}{}", self.buffer, &v[..v.len() - 1]),
                 }
-                self.buffer = String::new();
+                self.buffer.clear();
             } else {
                 self.buffer += v.as_ref();
             }

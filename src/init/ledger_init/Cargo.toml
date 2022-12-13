@@ -1,5 +1,5 @@
 [package]
-name = "_2_ledger"
+name = "ledger_init"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,7 +12,7 @@ many-identity = { git = "https://github.com/hansl/many-rs.git", branch = "make-i
 many-modules = { git = "https://github.com/hansl/many-rs.git", branch = "make-it-no-std-ish" }
 many-wasm = { path = "../../many-wasm" }
 minicbor = "0.18.0"
-serde = "1.0.149"
+serde = "1.0"
 serde_json = "1.0.89"
 storage-ledger = { path = "../../storage/ledger" }
 wee_alloc = "0.4.5"

@@ -1,69 +1,14 @@
 #![feature(try_trait_v2)]
 
 use crate::host::many::{error_argument, error_create, error_message};
-use many_error::ManyError;
-use std::ops::{ControlFlow, FromResidual, Try};
 
 pub(crate) mod host;
-
-pub struct ErrorResult<T> {
-    inner: Result<T, ManyError>,
-}
-
-impl<T> Into<ErrorResult<T>> for Result<T, ManyError> {
-    fn into(self) -> ErrorResult<T> {
-        ErrorResult { inner: self }
-    }
-}
-
-impl<T> FromResidual<ManyError> for ErrorResult<T> {
-    fn from_residual(residual: ManyError) -> Self {
-        Err(residual).into()
-    }
-}
-
-impl<T> FromResidual<ErrorResult<T>> for () {
-    fn from_residual(residual: ErrorResult<T>) -> Self {
-        match residual.inner {
-            Ok(_) => {}
-            Err(err) => many::set_return_error(err),
-        }
-    }
-}
-
-impl<T> FromResidual<ErrorResult<T>> for ErrorResult<T> {
-    fn from_residual(residual: ErrorResult<T>) -> Self {
-        residual
-    }
-}
-
-impl<T> Try for ErrorResult<T> {
-    type Output = T;
-    type Residual = ErrorResult<T>;
-
-    fn from_output(output: Self::Output) -> Self {
-        Ok(output).into()
-    }
-
-    fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
-        match self.inner {
-            Ok(t) => ControlFlow::Continue(t),
-            Err(_) => ControlFlow::Break(self),
-        }
-    }
-}
 
 pub mod many {
     use super::host::many;
     use crate::{error_argument, error_create, error_message};
     use many_error::ManyError;
     use many_identity::Address;
-
-    pub fn log(str: &str) {
-        unsafe {
-            many::log_str(str.as_ptr() as u32, str.len() as u32);
-        }
-    }
 
     pub fn sender() -> Address {
         let mut bytes = vec![0u8; 32];
@@ -81,8 +26,8 @@ pub mod many {
     }
 
     /// Decode CBOR payload.
-    pub fn decode<'a, T: minicbor::Decode<'a, ()>>(payload: &'a [u8]) -> super::ErrorResult<T> {
-        let result: super::ErrorResult<T> = minicbor::decode::<'_, T>(payload)
+    pub fn decode<'a, T: minicbor::Decode<'a, ()>>(payload: &'a [u8]) -> Result<T, ManyError> {
+        let result: Result<T, ManyError> = minicbor::decode::<'_, T>(payload)
             .map_err(|e| ManyError::deserialization_error(e))
             .into();
 
@@ -112,5 +57,46 @@ pub mod many {
 
     pub fn set_return_data(data: Vec<u8>) {
         unsafe { many::return_data(data.as_ptr() as u32, data.len() as u32) }
+    }
+}
+
+pub mod store {
+    use crate::host::store;
+
+    pub struct Storage(u32);
+
+    impl Storage {
+        pub fn by_name(name: &str) -> Self {
+            let handle = unsafe { store::storage(name.as_ptr() as u32, name.len() as u32) };
+            Self(handle)
+        }
+
+        pub fn get(&self, key: &[u8]) -> Vec<u8> {
+            let size = unsafe { store::size(self.0, key.as_ptr() as u32, key.len() as u32) };
+            let buffer: Vec<u8> = vec![0u8; size as usize];
+            unsafe {
+                store::get(
+                    self.0,
+                    key.as_ptr() as u32,
+                    key.len() as u32,
+                    buffer.as_ptr() as u32,
+                    size,
+                )
+            };
+
+            buffer
+        }
+
+        pub fn set(&self, key: &[u8], value: &[u8]) {
+            unsafe {
+                store::set(
+                    self.0,
+                    key.as_ptr() as u32,
+                    key.len() as u32,
+                    value.as_ptr() as u32,
+                    value.len() as u32,
+                );
+            }
+        }
     }
 }

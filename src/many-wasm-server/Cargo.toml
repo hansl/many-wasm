@@ -31,4 +31,4 @@ wasi = "0.11.0"
 wasi-common = "3.0.1"
 wasmtime = { version = "3.0.1", features = ["default"] }
 wasmtime-wasi = "3.0.1"
-wiggle = "3.0.1"
+wiggle = { version = "3.0.1", features = ["wasmtime_async"] }

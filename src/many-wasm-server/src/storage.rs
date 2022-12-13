@@ -10,6 +10,7 @@ pub trait KvStore: Send {
     fn set(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<(), ManyError>;
     fn del(&mut self, key: &[u8]) -> Result<(), ManyError>;
     fn contains(&self, key: &[u8]) -> bool;
+    fn size(&self, key: &[u8]) -> Option<usize>;
     fn hash(&self) -> Vec<u8>;
     fn commit(&mut self) -> Result<(), ManyError>;
 }
@@ -31,6 +32,10 @@ impl KvStore for NullKvStore {
 
     fn contains(&self, _key: &[u8]) -> bool {
         false
+    }
+
+    fn size(&self, _key: &[u8]) -> Option<usize> {
+        None
     }
 
     fn hash(&self) -> Vec<u8> {
@@ -123,12 +128,11 @@ impl KvStore for StorageRef {
     }
 
     fn contains(&self, key: &[u8]) -> bool {
-        let key = self._key(key.into());
-        self.inner
-            .lock()
-            .map_err(ManyError::unknown)
-            .unwrap()
-            .contains(key.as_ref())
+        self.inner.lock().unwrap().contains(key)
+    }
+
+    fn size(&self, key: &[u8]) -> Option<usize> {
+        self.inner.lock().ok()?.size(key)
     }
 
     fn hash(&self) -> Vec<u8> {

@@ -2,9 +2,6 @@
 
 #[link(wasm_import_module = "many")]
 extern "C" {
-    pub fn log_str(ptr: u32, len: u32);
-    pub fn log_u32(v: u32);
-
     // Request stuff.
     pub fn payload_size() -> u32;
     pub fn payload_copy(ptr: u32, len: u32) -> u32;

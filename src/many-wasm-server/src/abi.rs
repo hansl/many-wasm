@@ -18,8 +18,6 @@ macro_rules! decl_many_imports {
 
 pub fn link(linker: &mut Linker<WasmContext>) -> Result<(), Error> {
     decl_many_imports!((linker, many) => {
-        log_str,
-        log_u32,
         payload_size,
         payload_copy,
         sender_size,
@@ -31,11 +29,12 @@ pub fn link(linker: &mut Linker<WasmContext>) -> Result<(), Error> {
         return_data,
     });
 
-    // decl_many_imports!((linker, store) => {
-    //     new,
-    //     set,
-    //     get,
-    // });
+    decl_many_imports!((linker, store) => {
+        storage,
+        get,
+        set,
+        size,
+    });
 
     wasi_snapshot_preview1::register_wasi(linker)?;
 
@@ -76,7 +75,7 @@ pub(self) fn _read_str<R>(
 }
 
 pub(self) fn _store<T>(
-    mut caller: Caller<WasmContext>,
+    caller: &mut Caller<WasmContext>,
     ptr: u32,
     len: u32,
     func: impl FnOnce(&mut [u8]) -> Result<T, Error>,
@@ -87,7 +86,7 @@ pub(self) fn _store<T>(
     };
 
     let data = memory
-        .data_mut(&mut caller)
+        .data_mut(caller)
         .get_mut(ptr as usize..)
         .and_then(|arr| arr.get_mut(..len as usize))
         .ok_or_else(|| Error::msg("pointer/length out of bounds"))?;

@@ -62,6 +62,7 @@ impl WasmEngine {
         config: ModuleConfig,
         config_root: impl AsRef<Path>,
         storage: StorageLibrary,
+        init: bool,
     ) -> Result<Self, anyhow::Error> {
         let engine = Engine::default();
         let mut store = Store::new(&engine, WasmContext::new(storage, create_wasi_ctx()));
@@ -82,6 +83,12 @@ impl WasmEngine {
             linker
                 .instantiate(&mut store, &module)
                 .expect("Could not instantiate.");
+
+            if init {
+                let instance = linker.instantiate(&mut store, &module)?;
+                let func = instance.get_typed_func::<(), (), _>(&mut store, "init")?;
+                func.call(&mut store, ())?;
+            }
 
             modules.add(module)?;
         }

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "src/init/ledger_init",
     "src/storage/ledger",
     "src/modules/_2_ledger",
     "src/many-wasm",

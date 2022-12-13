@@ -48,6 +48,10 @@ impl KvStore for MerkStorage {
         self.merk.get(key).map_or(false, |v| v.is_some())
     }
 
+    fn size(&self, key: &[u8]) -> Option<usize> {
+        Some(self.merk.get(key).ok()??.len())
+    }
+
     fn hash(&self) -> Vec<u8> {
         self.merk.root_hash().to_vec()
     }
