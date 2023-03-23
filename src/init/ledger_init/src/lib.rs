@@ -1,5 +1,9 @@
 extern crate wee_alloc;
 
+use many_identity::Address;
+use many_wasm::store::Storage;
+use std::collections::BTreeMap;
+use std::str::FromStr;
 use storage_ledger::LedgerAccount;
 
 // Use `wee_alloc` as the global allocator.
@@ -10,12 +14,11 @@ struct LedgerConfig {
     symbols: BTreeMap<String, String>,
 }
 
-#[export_name = "init"]
-pub fn init() {
+pub fn start() {
     let _ = Storage::by_name("balances");
 
-    let account: LedgerAccount =
-        Address::try_from("maffbahksdwaqeenayy2gxke32hgb7aq4ao4wt745lsfs6wijp")
+    let _account: LedgerAccount =
+        Address::from_str("maffbahksdwaqeenayy2gxke32hgb7aq4ao4wt745lsfs6wijp")
             .unwrap()
             .into();
 }

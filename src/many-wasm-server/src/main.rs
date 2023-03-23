@@ -57,14 +57,10 @@ async fn main() {
     tracing_subscriber::fmt().with_max_level(log_level).init();
     info!("opts = {:?}", opts);
 
-    let config: WasmConfig = {
-        let content = std::fs::read_to_string::<&Path>(opts.config.as_ref())
-            .expect("Could not read config file.");
-        json5::from_str(&content).expect("Could not parse config.")
-    };
-
     let config_dir = opts.config.parent().unwrap_or_else(|| Path::new(""));
     let config_dir = std::env::current_dir().unwrap().join(config_dir);
+
+    let config: WasmConfig = WasmConfig::load(&config_dir.join(&opts.config)).unwrap();
     let storage = StorageLibrary::create(config.storages, &config_dir, opts.init)
         .expect("Could not create storage.");
 
@@ -73,8 +69,18 @@ async fn main() {
     )
     .expect("Could not parse PEM file.");
 
-    let engine = wasm_engine::WasmEngine::new(config.modules, &config_dir, storage, opts.init)
-        .expect("Could not load WASM.");
+    let mut engine = wasm_engine::WasmEngine::new(storage).expect("Could not create engine.");
+    engine
+        .add_module_config(config.modules)
+        .expect("Could not load modules.");
+
+    // Check if we need to init.
+    if opts.init {
+        engine
+            .init(config.init)
+            .expect("Could not initialize engine.");
+    }
+
     let executor = executor::WasmExecutor::new(engine, key);
     let server = HttpServer::new(executor);
 

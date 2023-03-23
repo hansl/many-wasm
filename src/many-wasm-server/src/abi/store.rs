@@ -65,6 +65,6 @@ pub fn set(
         Ok(value.to_owned())
     })?;
 
-    let mut storage_ref = caller.data_mut().get_storage_mut(handle.into())?;
+    let storage_ref = caller.data_mut().get_storage_mut(handle.into())?;
     storage_ref.set(key, value).map_err(|e| anyhow!("{e}"))
 }

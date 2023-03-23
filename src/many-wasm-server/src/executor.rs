@@ -45,7 +45,7 @@ impl<'a, I: Identity + std::marker::Sync> LowLevelManyRequestHandler for WasmExe
             .write()
             .map_err(|_| String::from("Lock is poisoned."))?;
 
-        let data = engine.call(&request);
+        let data = engine.call_endpoint(&request);
 
         let response = ResponseMessage::from_request(&request, &self.identity.address(), data);
         encode_cose_sign1_from_response(response, &self.identity).map_err(|e| e.to_string())

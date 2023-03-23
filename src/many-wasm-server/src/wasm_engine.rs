@@ -6,8 +6,8 @@ use anyhow::anyhow;
 use many_error::ManyError;
 use many_protocol::RequestMessage;
 use state::WasmContext;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::path::Path;
 use tracing::debug;
 use wasmtime::{Engine, Linker, Module, Store};
 
@@ -16,11 +16,12 @@ pub mod state;
 #[derive(Default)]
 struct ModuleLibrary {
     endpoints: BTreeMap<String, usize>,
+    names: BTreeMap<String, usize>,
     modules: Vec<Module>,
 }
 
 impl ModuleLibrary {
-    pub fn add(&mut self, module: Module) -> Result<(), anyhow::Error> {
+    pub fn add(&mut self, module: Module, name: Cow<str>) -> Result<(), anyhow::Error> {
         let endpoints = module
             .exports()
             .into_iter()
@@ -41,66 +42,108 @@ impl ModuleLibrary {
         for ep in endpoints {
             self.endpoints.insert(ep, idx);
         }
+        self.names.insert(name.into_owned(), idx);
 
         Ok(())
     }
 
-    pub fn get(&self, endpoint: &str) -> Option<&Module> {
+    pub fn by_endpoint(&self, endpoint: &str) -> Option<&Module> {
         let idx = self.endpoints.get(endpoint)?;
         self.modules.get(*idx)
+    }
+
+    pub fn by_name(&self, name: &str) -> Option<&Module> {
+        let idx = self.names.get(name)?;
+        self.modules.get(*idx)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Module> {
+        self.modules.iter()
     }
 }
 
 pub struct WasmEngine {
     store: Store<WasmContext>,
-    modules: ModuleLibrary,
     linker: Linker<WasmContext>,
+    modules: ModuleLibrary,
 }
 
 impl WasmEngine {
-    pub fn new(
-        config: ModuleConfig,
-        config_root: impl AsRef<Path>,
-        storage: StorageLibrary,
-        init: bool,
-    ) -> Result<Self, anyhow::Error> {
+    pub fn new(storage: StorageLibrary) -> Result<Self, anyhow::Error> {
         let engine = Engine::default();
         let mut store = Store::new(&engine, WasmContext::new(storage, create_wasi_ctx()));
         let mut linker = Linker::new(store.engine());
         abi::link(&mut linker)?;
 
-        let mut modules = ModuleLibrary::default();
-        for (p, _c) in config {
-            let wasm_path = config_root.as_ref().join(p);
-            debug!(
-                msg = "loading wasm",
-                wasm_path = wasm_path.to_string_lossy().as_ref()
-            );
-            let module: Module =
-                Module::from_file(store.engine(), wasm_path).map_err(|e| anyhow!("{}", e))?;
-
-            // Instantiate at least once.
-            linker
-                .instantiate(&mut store, &module)
-                .expect("Could not instantiate.");
-
-            if init {
-                let instance = linker.instantiate(&mut store, &module)?;
-                let func = instance.get_typed_func::<(), (), _>(&mut store, "init")?;
-                func.call(&mut store, ())?;
-            }
-
-            modules.add(module)?;
-        }
-
         Ok(Self {
             store,
-            modules,
             linker,
+            modules: ModuleLibrary::default(),
         })
     }
 
-    pub fn call(&mut self, message: &RequestMessage) -> Result<Vec<u8>, ManyError> {
+    pub fn add_module_config(&mut self, config: ModuleConfig) -> Result<(), anyhow::Error> {
+        for ref config in config {
+            let module: Module = Module::from_file(self.store.engine(), &config.path)
+                .map_err(|e| anyhow!("{}", e))?;
+
+            // Instantiate at least once to optimize.
+            self.linker.instantiate(&mut self.store, &module)?;
+
+            self.modules.add(module, config.name())?;
+        }
+
+        Ok(())
+    }
+
+    pub fn init(&mut self, init: ModuleConfig) -> Result<(), anyhow::Error> {
+        // First, initialize with the init modules.
+        for ref config in init {
+            let module: Module = Module::from_file(self.store.engine(), &config.path)
+                .map_err(|e| anyhow!("{}", e))?;
+
+            // Instantiate it at least once.
+            self.linker.instantiate(&mut self.store, &module)?;
+
+            let payload = config.arg.to_string();
+            let _: () = self.call_method(&module, "init", (), payload.into_bytes())?;
+        }
+
+        // Then, call all modules registered.
+
+        Ok(())
+    }
+
+    fn call_method<Params, Results, Payload>(
+        &mut self,
+        module: &Module,
+        name: &str,
+        args: Params,
+        payload: Payload,
+    ) -> Result<Results, ManyError>
+    where
+        Params: wasmtime::WasmParams,
+        Results: wasmtime::WasmResults,
+        Payload: minicbor::Encode<()>,
+    {
+        self.store
+            .data_mut()
+            .set_payload(minicbor::to_vec(payload).map_err(ManyError::serialization_error)?);
+
+        let instance = self
+            .linker
+            .instantiate(&mut self.store, module)
+            .expect("Could not instantiate");
+
+        let func = instance
+            .get_typed_func::<Params, Results, _>(&mut self.store, name)
+            .map_err(|e| ManyError::unknown(e))?;
+
+        func.call(&mut self.store, args)
+            .map_err(|e| ManyError::unknown(e))
+    }
+
+    pub fn call_endpoint(&mut self, message: &RequestMessage) -> Result<Vec<u8>, ManyError> {
         let endpoint = message.method.to_string();
         self.store.data_mut().set_request(message.clone());
 
@@ -109,7 +152,7 @@ impl WasmEngine {
             .instantiate(
                 &mut self.store,
                 self.modules
-                    .get(&endpoint)
+                    .by_endpoint(&endpoint)
                     .ok_or_else(|| ManyError::unknown("Endpoint not found"))?,
             )
             .expect("Could not instantiate.");

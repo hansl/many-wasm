@@ -6,7 +6,7 @@
   // The `init` field list modules to use to create the initial storage.
   // Those modules don't know about the root storages, they will use the
   // same storage as any other modules.
-  // The `init()` function in each of those modules will be used. Then
+  // The `start()` function in each of those modules will be used. Then
   // the modules themselves will be discarded and never used again.
   // They are executed in order.
   init : [
@@ -21,7 +21,7 @@
           precision: 9
         }
       }
-    }
+    },
     // This sets up balances inside the storage.
     {
       // `name` is optional but will show up in the logs. If unspecified,
@@ -46,7 +46,9 @@
     // This module checks the hash (at this time) of the storage.
     {
       path: "../target/wasm32-wasi/debug/check_hash.wasm",
-      arg: "fc0041ca4f7d959fe9e5a337e175bd8a68942cad76745711a3daf820a159f7eb"
+      arg: {
+        hash: "fc0041ca4f7d959fe9e5a337e175bd8a68942cad76745711a3daf820a159f7eb",
+      }
     },
   ],
   modules: {

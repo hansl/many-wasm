@@ -130,10 +130,50 @@ impl HandleRegistry {
     }
 }
 
+pub enum CallContext {
+    None,
+    Initialize(Vec<u8>),
+    ManyRequest(RequestMessage, Option<Result<Vec<u8>, ManyError>>),
+}
+
+impl CallContext {
+    pub fn as_initialize(&self) -> Option<&Vec<u8>> {
+        match self {
+            Self::Initialize(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn as_initialize_mut(&mut self) -> Option<&mut Vec<u8>> {
+        match self {
+            Self::Initialize(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn as_many_request(
+        &self,
+    ) -> Option<(&RequestMessage, &Option<Result<Vec<u8>, ManyError>>)> {
+        match self {
+            Self::ManyRequest(req, res) => Some((req, res)),
+            _ => None,
+        }
+    }
+
+    pub fn as_many_request_mut(
+        &mut self,
+    ) -> Option<(&mut RequestMessage, &mut Option<Result<Vec<u8>, ManyError>>)> {
+        match self {
+            Self::ManyRequest(req, res) => Some((req, res)),
+            _ => None,
+        }
+    }
+}
+
 pub struct WasmContext {
-    request: Result<RequestMessage, Error>,
+    call_context: CallContext,
     registry: HandleRegistry,
-    return_value: Option<Result<Vec<u8>, ManyError>>,
+
     storage_library: StorageLibrary,
     storage_cache: BTreeMap<String, RegistryHandle>,
     wasi_ctx: WasiCtx,
@@ -142,20 +182,25 @@ pub struct WasmContext {
 impl WasmContext {
     pub fn new(storage_library: StorageLibrary, wasi_ctx: WasiCtx) -> Self {
         Self {
-            request: Err(Error::msg("No request available in context")),
+            call_context: CallContext::None,
             registry: Default::default(),
-            return_value: None,
             storage_library,
             storage_cache: BTreeMap::new(),
             wasi_ctx,
         }
     }
 
-    pub fn reset(&mut self) -> Result<Result<Vec<u8>, ManyError>, Error> {
-        self.request = Err(Error::msg("missing context"));
-        self.return_value
-            .take()
-            .ok_or_else(|| Error::msg("No return value was set"))
+    pub fn reset(&mut self) {
+        self.call_context = CallContext::None;
+    }
+
+    pub fn response(&mut self) -> Result<Result<Vec<u8>, ManyError>, Error> {
+        match &mut self.call_context {
+            CallContext::ManyRequest(_, response) => response
+                .take()
+                .ok_or_else(|| Error::msg("No return value was set")),
+            _ => Err(Error::msg("Invalid context")),
+        }
     }
 
     pub fn wasi_ctx(&self) -> &WasiCtx {
@@ -166,21 +211,29 @@ impl WasmContext {
         &mut self.wasi_ctx
     }
 
-    pub fn set_request(&mut self, request: RequestMessage) {
-        self.request = Ok(request);
+    pub fn set_call_context(&mut self, ctx: CallContext) {
+        self.call_context = ctx;
     }
 
     pub fn set_return_value(&mut self, value: Result<Vec<u8>, ManyError>) -> Result<(), Error> {
-        match self.return_value.replace(value) {
-            None => Ok(()),
-            Some(_) => Err(Error::msg("return state already set")),
+        match &mut self.call_context {
+            CallContext::ManyRequest(_, response) => match response.replace(value) {
+                None => Ok(()),
+                Some(_) => Err(Error::msg("return state already set")),
+            },
+            _ => Err(Error::msg("Invalid call context")),
         }
     }
 
+    pub fn arg(&self) -> Option<&Vec<u8>> {
+        self.call_context.as_initialize()
+    }
+
     pub fn request(&self) -> Result<&RequestMessage, Error> {
-        self.request
-            .as_ref()
-            .map_err(|err| Error::msg(format!("Request Error: {err}")))
+        self.call_context
+            .as_many_request()
+            .map(|(req, _)| req)
+            .ok_or_else(Error::msg("Invalid context"))
     }
 
     pub fn payload_size(&self) -> Result<usize, Error> {

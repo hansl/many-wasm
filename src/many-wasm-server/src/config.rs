@@ -1,6 +1,12 @@
 use crate::storage::{memory, merk, NullKvStore, StorageLibrary, StorageRef};
+use anyhow::anyhow;
+use either::Either;
 use many_error::ManyError;
+use serde::Deserializer;
 use serde_derive::{Deserialize, Serialize};
+use serde_json::Value;
+use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tracing::debug;
@@ -90,16 +96,61 @@ impl IntoIterator for StorageConfig {
     }
 }
 
+thread_local! {
+    static CURRENT_PATH: RefCell<PathBuf> = RefCell::new(PathBuf::new());
+}
+
+fn maybe_load<'de, D, T: serde::de::DeserializeOwned>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let v: Either<PathBuf, T> = either::serde_untagged::deserialize(deserializer)?;
+    match v {
+        Either::Left(path) => CURRENT_PATH.with(|p| {
+            let content = std::fs::read_to_string(p.borrow().join(&path))
+                .map_err(|_e| serde::de::Error::custom("Could not open file"))?;
+            json5::from_str(&content).map_err(|_| serde::de::Error::custom("Could not parse file"))
+        }),
+        Either::Right(t) => Ok(t),
+    }
+}
+
+fn prefix_root<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let pb: PathBuf = serde::Deserialize::deserialize(deserializer)?;
+    CURRENT_PATH.with(|j| Ok(j.borrow().join(&pb)))
+}
+
 #[derive(Serialize, Deserialize)]
-pub struct SingleModuleConfig {}
+pub struct SingleModuleConfig {
+    pub name: Option<String>,
+
+    #[serde(deserialize_with = "prefix_root")]
+    pub path: PathBuf,
+
+    #[serde(deserialize_with = "maybe_load")]
+    pub arg: Value,
+}
+
+impl SingleModuleConfig {
+    pub fn name(&self) -> Cow<'_, str> {
+        self.name
+            .as_ref()
+            .map(|n| Cow::Borrowed(n.as_str()))
+            .or_else(|| self.path.file_name().map(|x| x.to_string_lossy()))
+            .unwrap_or_default()
+    }
+}
 
 #[derive(Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct ModuleConfig(BTreeMap<PathBuf, SingleModuleConfig>);
+pub struct ModuleConfig(Vec<SingleModuleConfig>);
 
 impl IntoIterator for ModuleConfig {
-    type Item = (PathBuf, SingleModuleConfig);
-    type IntoIter = std::collections::btree_map::IntoIter<PathBuf, SingleModuleConfig>;
+    type Item = SingleModuleConfig;
+    type IntoIter = std::vec::IntoIter<SingleModuleConfig>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -108,6 +159,18 @@ impl IntoIterator for ModuleConfig {
 
 #[derive(Serialize, Deserialize)]
 pub struct WasmConfig {
+    pub init: ModuleConfig,
     pub modules: ModuleConfig,
     pub storages: StorageConfig,
+}
+
+impl WasmConfig {
+    pub fn load(path: &Path) -> Result<Self, anyhow::Error> {
+        CURRENT_PATH.with(|p| {
+            *p.borrow_mut() = path.parent().map(Path::to_path_buf).unwrap_or_default();
+        });
+
+        json5::from_str(&std::fs::read_to_string(path)?)
+            .map_err(|e| anyhow!("Could not parse module config: {e}"))
+    }
 }
